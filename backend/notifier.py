@@ -85,3 +85,42 @@ def maybe_notify(data: dict, company: str = "MSTR") -> bool:
         return False
     logger.info("[%s] Signal=UNDERVALUED — sending Telegram alert…", company)
     return send_telegram(format_alert(data, company=company))
+
+
+def send_daily_report(results: dict[str, dict | None]) -> bool:
+    """Send a daily summary report for all companies regardless of signal."""
+    if not BOT_TOKEN or not CHAT_ID:
+        return False
+
+    lines = ["📊 <b>Daily BTC Treasury Report</b>\n"]
+    has_data = False
+
+    for company, data in results.items():
+        if not data:
+            continue
+            
+        has_data = True
+        sign = "+" if data["discount_pct"] > 0 else ""
+        
+        # Determine emoji based on signal
+        if data["is_undervalued"]:
+            emoji = "🟢"
+        elif data["discount_pct"] < -10:
+            emoji = "🔴"
+        else:
+            emoji = "⚖️"
+            
+        company_name = _COMPANY_LABELS.get(company.upper(), company.upper())
+        
+        lines.append(f"{emoji} <b>{company_name} ({company.upper()})</b>")
+        lines.append(f"• Market: <code>${data['current_price']:.2f}</code> | Implied: <code>${data['implied_price']:.2f}</code>")
+        lines.append(f"• Premium/Discount: <code>{sign}{data['discount_pct']:.1f}%</code>")
+        lines.append(f"• BTC Holdings: <code>{data['btc_amount']:,.0f} BTC</code>")
+        lines.append("")
+        
+    if not has_data:
+        return False
+        
+    message = "\n".join(lines).strip()
+    logger.info("Sending daily Telegram report…")
+    return send_telegram(message)

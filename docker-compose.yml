@@ -1,7 +1,7 @@
 services:
   btc-treasury:
     build: .
-    image: btc-treasury:v2.3
+    image: btc-treasury:v2.4
     container_name: btc-treasury
     restart: unless-stopped
     ports:

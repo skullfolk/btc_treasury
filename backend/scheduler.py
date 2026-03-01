@@ -14,15 +14,24 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _run_refresh_all():
-    """Refresh all companies. Import here to avoid circular imports."""
+    """Refresh all companies and send daily report."""
     from backend.refresh import do_refresh_all
+    from backend.notifier import send_daily_report
+    
     logger.info("Scheduled refresh triggered at %s UTC", datetime.utcnow())
     results = do_refresh_all()
+    
     for company, result in results.items():
-        logger.info(
-            "[%s] price=$%.2f  implied=$%.2f  signal=%s",
-            company, result["current_price"], result["implied_price"], result["signal"]
-        )
+        if result:
+            logger.info(
+                "[%s] price=$%.2f  implied=$%.2f  signal=%s",
+                company, result["current_price"], result["implied_price"], result["signal"]
+            )
+            
+    try:
+        send_daily_report(results)
+    except Exception as exc:
+        logger.error("Error sending daily report: %s", exc)
 
 
 def start_scheduler():
