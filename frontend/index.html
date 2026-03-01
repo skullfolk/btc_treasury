@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MSTR BTC Treasury Implied Value</title>
+  <meta name="description"
+    content="Real-time dashboard comparing MicroStrategy stock price against its BTC-implied fair value." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;600&display=swap"
+    rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── Reset & Tokens ─────────────────────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #080c14;
+      --bg-card: #0d1421;
+      --bg-glass: rgba(255, 255, 255, .04);
+      --border: rgba(255, 255, 255, .07);
+      --border-hi: rgba(255, 170, 30, .2);
+      --accent: #f7941d;
+      --accent-dim: #c97212;
+      --green: #00e676;
+      --green-dim: #00b85e;
+      --red: #ff4e6a;
+      --red-dim: #c7304a;
+      --yellow: #ffd740;
+      --text-pri: #f0f4ff;
+      --text-sec: #8a9ab5;
+      --text-muted: #4a5568;
+      --font: 'Inter', sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 8px 40px rgba(0, 0, 0, .6);
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text-pri);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Background glow ────────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed;
+      top: -200px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 900px;
+      height: 600px;
+      background: radial-gradient(ellipse at center, rgba(247, 148, 29, .08) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────── */
+    .container {
+      position: relative;
+      z-index: 1;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+
+    /* ── Header ─────────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--accent);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 24px rgba(247, 148, 29, .4);
+    }
+
+    .logo h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -.02em;
+    }
+
+    .logo span {
+      color: var(--accent);
+    }
+
+    .header-meta {
+      text-align: right;
+    }
+
+    .last-updated {
+      font-size: .75rem;
+      color: var(--text-sec);
+      font-family: var(--mono);
+    }
+
+    .refresh-btn {
+      margin-top: 6px;
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      color: var(--text-sec);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: .75rem;
+      cursor: pointer;
+      font-family: var(--font);
+      transition: all .2s;
+    }
+
+    .refresh-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .refresh-btn:disabled {
+      opacity: .5;
+      cursor: not-allowed;
+    }
+
+    /* ── Signal Banner ──────────────────────────────────────────────── */
+    .signal-banner {
+      border-radius: var(--radius);
+      padding: 32px 36px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 24px;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      transition: border-color .4s;
+    }
+
+    .signal-banner.undervalued {
+      background: linear-gradient(135deg, rgba(0, 230, 118, .06) 0%, rgba(8, 12, 20, 1) 60%);
+      border-color: rgba(0, 230, 118, .25);
+    }
+
+    .signal-banner.overvalued {
+      background: linear-gradient(135deg, rgba(255, 78, 106, .06) 0%, rgba(8, 12, 20, 1) 60%);
+      border-color: rgba(255, 78, 106, .25);
+    }
+
+    .signal-banner.fair {
+      background: linear-gradient(135deg, rgba(255, 215, 64, .06) 0%, rgba(8, 12, 20, 1) 60%);
+      border-color: rgba(255, 215, 64, .25);
+    }
+
+    .signal-banner::before {
+      content: '';
+      position: absolute;
+      right: -60px;
+      top: -60px;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      opacity: .06;
+      pointer-events: none;
+    }
+
+    .signal-banner.undervalued::before {
+      background: var(--green);
+    }
+
+    .signal-banner.overvalued::before {
+      background: var(--red);
+    }
+
+    .signal-banner.fair::before {
+      background: var(--yellow);
+    }
+
+    .signal-left {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .signal-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: .8rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      padding: 5px 14px;
+      border-radius: 100px;
+      width: fit-content;
+    }
+
+    .signal-badge.undervalued {
+      background: rgba(0, 230, 118, .15);
+      color: var(--green);
+    }
+
+    .signal-badge.overvalued {
+      background: rgba(255, 78, 106, .15);
+      color: var(--red);
+    }
+
+    .signal-badge.fair {
+      background: rgba(255, 215, 64, .15);
+      color: var(--yellow);
+    }
+
+    .signal-badge .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    .signal-badge.undervalued .dot {
+      background: var(--green);
+    }
+
+    .signal-badge.overvalued .dot {
+      background: var(--red);
+    }
+
+    .signal-badge.fair .dot {
+      background: var(--yellow);
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+        transform: scale(1);
+      }
+
+      50% {
+        opacity: .5;
+        transform: scale(.75);
+      }
+    }
+
+    .signal-desc {
+      font-size: .9rem;
+      color: var(--text-sec);
+    }
+
+    .discount-label {
+      font-size: 2.8rem;
+      font-weight: 900;
+      letter-spacing: -.04em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .discount-label.undervalued {
+      color: var(--green);
+    }
+
+    .discount-label.overvalued {
+      color: var(--red);
+    }
+
+    .discount-label.fair {
+      color: var(--yellow);
+    }
+
+    .discount-sub {
+      font-size: .8rem;
+      color: var(--text-sec);
+      margin-top: 4px;
+    }
+
+    /* ── Price Comparison ───────────────────────────────────────────── */
+    .price-grid {
+      display: grid;
+      grid-template-columns: 1fr 48px 1fr;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .price-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 28px 24px;
+      transition: border-color .3s, transform .2s;
+    }
+
+    .price-card:hover {
+      border-color: var(--border-hi);
+      transform: translateY(-2px);
+    }
+
+    .price-card.highlighted {
+      border-color: rgba(247, 148, 29, .3);
+    }
+
+    .price-card .label {
+      font-size: .72rem;
+      color: var(--text-sec);
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+
+    .price-card .price-val {
+      font-size: 2.4rem;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -.03em;
+    }
+
+    .price-card .price-sub {
+      font-size: .78rem;
+      color: var(--text-sec);
+      margin-top: 6px;
+      font-family: var(--mono);
+    }
+
+    .vs-divider {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .9rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .arrow-indicator {
+      font-size: 1.4rem;
+      display: block;
+      text-align: center;
+      margin-top: 4px;
+    }
+
+    /* ── Stats Grid ─────────────────────────────────────────────────── */
+    .section-title {
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--text-sec);
+      margin-bottom: 16px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 18px 20px;
+      transition: border-color .2s, transform .2s;
+    }
+
+    .stat-card:hover {
+      border-color: var(--border-hi);
+      transform: translateY(-1px);
+    }
+
+    .stat-card .s-label {
+      font-size: .68rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .stat-card .s-val {
+      font-size: 1.25rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      font-family: var(--mono);
+    }
+
+    .stat-card .s-unit {
+      font-size: .68rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .s-val.accent {
+      color: var(--accent);
+    }
+
+    .s-val.green {
+      color: var(--green);
+    }
+
+    /* ── BTC Slider Card ────────────────────────────────────────────── */
+    .slider-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-hi);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 28px;
+      box-shadow: 0 0 40px rgba(247, 148, 29, .06);
+    }
+
+    .slider-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .slider-title {
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .slider-price-display {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .slider-price-val {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      font-family: var(--mono);
+    }
+
+    .slider-spot-badge {
+      font-size: .72rem;
+      padding: 3px 10px;
+      border-radius: 100px;
+      background: rgba(247, 148, 29, .12);
+      color: var(--accent);
+      font-weight: 600;
+      letter-spacing: .06em;
+      cursor: pointer;
+      border: 1px solid rgba(247, 148, 29, .25);
+      transition: all .2s;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    .slider-spot-badge:hover {
+      background: rgba(247, 148, 29, .22);
+    }
+
+    .slider-spot-badge.active {
+      background: rgba(247, 148, 29, .3);
+    }
+
+    /* Editable price input */
+    .price-input-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .price-input-wrap::before {
+      content: '$';
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-family: var(--mono);
+      line-height: 1;
+      position: absolute;
+      left: 0;
+      pointer-events: none;
+    }
+
+    #btcPriceInput {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      font-family: var(--mono);
+      background: transparent;
+      border: none;
+      outline: none;
+      border-bottom: 2px solid transparent;
+      padding: 0 0 2px 22px;
+      width: 180px;
+      transition: border-color .2s;
+      cursor: text;
+    }
+
+    #btcPriceInput:focus {
+      border-bottom-color: var(--accent);
+    }
+
+    #btcPriceInput::placeholder {
+      color: var(--text-muted);
+    }
+
+    /* Fair value highlight */
+    .fair-value-card {
+      background: rgba(247, 148, 29, .08);
+      border: 1px solid rgba(247, 148, 29, .3);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      grid-column: 1 / -1;
+      /* full width on its own row */
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+
+    .fvc-label {
+      font-size: .68rem;
+      color: var(--accent);
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .fvc-val {
+      font-size: 2rem;
+      font-weight: 900;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .fvc-badge {
+      font-size: .85rem;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 100px;
+      margin-left: auto;
+    }
+
+    .fvc-badge.undervalued {
+      background: rgba(0, 230, 118, .15);
+      color: var(--green);
+    }
+
+    .fvc-badge.overvalued {
+      background: rgba(255, 78, 106, .15);
+      color: var(--red);
+    }
+
+    .fvc-badge.fair {
+      background: rgba(255, 215, 64, .15);
+      color: var(--yellow);
+    }
+
+    .slider-track-wrap {
+      position: relative;
+      padding: 6px 0 20px;
+    }
+
+    .slider-range {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 6px;
+      border-radius: 3px;
+      outline: none;
+      cursor: pointer;
+      background: linear-gradient(to right,
+          var(--accent) 0%,
+          var(--accent) var(--pct, 50%),
+          rgba(255, 255, 255, .1) var(--pct, 50%),
+          rgba(255, 255, 255, .1) 100%);
+      transition: background .05s;
+    }
+
+    .slider-range::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(247, 148, 29, .5);
+      border: 3px solid var(--bg);
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+    }
+
+    .slider-range::-webkit-slider-thumb:hover {
+      transform: scale(1.2);
+      box-shadow: 0 0 20px rgba(247, 148, 29, .7);
+    }
+
+    .slider-range::-moz-range-thumb {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 3px solid var(--bg);
+      cursor: pointer;
+      box-shadow: 0 0 12px rgba(247, 148, 29, .5);
+    }
+
+    .slider-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: .65rem;
+      color: var(--text-muted);
+      font-family: var(--mono);
+      margin-top: 4px;
+    }
+
+    .slider-impact-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .slider-impact-card {
+      background: rgba(247, 148, 29, .05);
+      border: 1px solid rgba(247, 148, 29, .12);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+    }
+
+    .sic-label {
+      font-size: .65rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    .sic-val {
+      font-size: 1.2rem;
+      font-weight: 700;
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .sic-val.up {
+      color: var(--green);
+    }
+
+    .sic-val.down {
+      color: var(--red);
+    }
+
+    .sic-val.neu {
+      color: var(--accent);
+    }
+
+    .sic-change {
+      font-size: .7rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+      font-family: var(--mono);
+    }
+
+    /* ── Formula Card ───────────────────────────────────────────────── */
+    .formula-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 28px;
+    }
+
+    .formula-card .formula-title {
+      font-size: .72rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      color: var(--text-sec);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .formula-text {
+      font-family: var(--mono);
+      font-size: .9rem;
+      color: var(--text-pri);
+      line-height: 1.8;
+    }
+
+    .formula-text .highlight {
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .formula-text .value-inline {
+      color: var(--green);
+      background: rgba(0, 230, 118, .08);
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    /* ── Chart ──────────────────────────────────────────────────────── */
+    .chart-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 28px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .chart-legend {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: .75rem;
+      color: var(--text-sec);
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 300px;
+    }
+
+    #historyChart {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ── Footer ─────────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      padding-top: 16px;
+      font-size: .72rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border);
+    }
+
+    footer a {
+      color: var(--text-sec);
+      text-decoration: none;
+    }
+
+    footer a:hover {
+      color: var(--accent);
+    }
+
+    /* ── Loading skeleton ───────────────────────────────────────────── */
+    .skeleton {
+      background: linear-gradient(90deg, var(--bg-card) 25%, rgba(255, 255, 255, .04) 50%, var(--bg-card) 75%);
+      background-size: 400% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    @keyframes shimmer {
+      0% {
+        background-position: 200% 0;
+      }
+
+      100% {
+        background-position: -200% 0;
+      }
+    }
+
+    /* ── Responsive ─────────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+      .price-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .vs-divider {
+        display: none;
+      }
+
+      .price-card .price-val {
+        font-size: 1.9rem;
+      }
+
+      .discount-label {
+        font-size: 2rem;
+      }
+
+      .signal-banner {
+        padding: 22px 20px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+
+    <!-- Header -->
+    <header>
+      <div class="logo">
+        <div class="logo-icon">₿</div>
+        <h1>MSTR <span>BTC</span> Treasury</h1>
+      </div>
+      <div class="header-meta">
+        <div class="last-updated" id="lastUpdated">Loading…</div>
+        <button class="refresh-btn" id="refreshBtn" onclick="triggerRefresh()">⟳ Refresh Now</button>
+      </div>
+    </header>
+
+    <!-- Signal Banner -->
+    <div class="signal-banner" id="signalBanner">
+      <div class="signal-left">
+        <div class="signal-badge" id="signalBadge">
+          <span class="dot"></span>
+          <span id="signalText">Loading…</span>
+        </div>
+        <div class="signal-desc" id="signalDesc">Comparing current price to BTC-implied fair value</div>
+      </div>
+      <div>
+        <div class="discount-label" id="discountLabel">–</div>
+        <div class="discount-sub" id="discountSub">vs. Implied Fair Value</div>
+      </div>
+    </div>
+
+    <!-- Price Comparison -->
+    <div class="price-grid">
+      <div class="price-card highlighted">
+        <div class="label">Current MSTR Price</div>
+        <div class="price-val" id="currentPrice">$–</div>
+        <div class="price-sub" id="marketCap">Market Cap: –</div>
+      </div>
+      <div class="vs-divider">
+        <div>VS</div>
+        <div class="arrow-indicator" id="arrowIndicator">↔</div>
+      </div>
+      <div class="price-card">
+        <div class="label">BTC-Implied Fair Value</div>
+        <div class="price-val" id="impliedPrice">$–</div>
+        <div class="price-sub" id="btcEquityVal">BTC Equity Value: –</div>
+      </div>
+    </div>
+
+    <!-- BTC Price Slider -->
+    <div class="slider-card">
+      <div class="slider-header">
+        <div>
+          <div class="slider-title">🎛 BTC Price Scenario</div>
+          <div style="font-size:.8rem;color:var(--text-sec);margin-top:4px">
+            Adjust to see how the implied share price changes at different BTC prices
+          </div>
+        </div>
+        <div class="slider-price-display">
+          <div class="price-input-wrap">
+            <input type="number" id="btcPriceInput" placeholder="0" min="1" step="100"
+              title="Type a BTC price and press Enter" oninput="onPriceInput(this.value)"
+              onkeydown="onPriceKey(event)" />
+          </div>
+          <span class="slider-spot-badge" id="spotBadge" onclick="resetToSpot()" title="Reset to live spot price">⟳
+            Spot</span>
+        </div>
+      </div>
+      <div class="slider-track-wrap">
+        <input type="range" class="slider-range" id="btcSlider" min="0" max="1000" step="1" value="500"
+          oninput="onSliderMove(this.value)" />
+        <div class="slider-labels">
+          <span id="sliderMin">–</span>
+          <span style="color:var(--accent);font-weight:600">Spot ↑</span>
+          <span id="sliderMax">–</span>
+        </div>
+      </div>
+      <div class="slider-impact-row">
+        <!-- Fair Value highlight full-width row -->
+        <div class="fair-value-card">
+          <div>
+            <div class="fvc-label">⭐ Implied Fair Value @ BTC Scenario</div>
+            <div class="fvc-val" id="fvcImplied">$–</div>
+          </div>
+          <div style="color:var(--text-sec);font-size:.85rem" id="fvcVsSpot">–</div>
+          <div class="fvc-badge" id="fvcBadge">–</div>
+        </div>
+        <!-- Detail cards -->
+        <div class="slider-impact-card">
+          <div class="sic-label">BTC Treasury Value</div>
+          <div class="sic-val neu" id="sicBtcVal">–</div>
+          <div class="sic-change" id="sicBtcValChg"></div>
+        </div>
+        <div class="slider-impact-card">
+          <div class="sic-label">Discount / Premium</div>
+          <div class="sic-val" id="sicSignal">–</div>
+          <div class="sic-change" id="sicDiscount"></div>
+        </div>
+        <div class="slider-impact-card">
+          <div class="sic-label">Implied − Market</div>
+          <div class="sic-val" id="sicVsCurrent">–</div>
+          <div class="sic-change" id="sicVsCurrentSub">implied vs. current price</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input Variables -->
+    <div class="section-title">📊 Input Variables</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="s-label">BTC Holdings</div>
+        <div class="s-val accent" id="statBtcAmount">–</div>
+        <div class="s-unit">Bitcoin</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">BTC Price</div>
+        <div class="s-val accent" id="statBtcPrice">–</div>
+        <div class="s-unit">USD / BTC</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">BTC Treasury Value</div>
+        <div class="s-val green" id="statBtcValue">–</div>
+        <div class="s-unit">USD</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">Total Debt</div>
+        <div class="s-val" id="statDebt">–</div>
+        <div class="s-unit">USD</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">Preferred Stock</div>
+        <div class="s-val" id="statPref">–</div>
+        <div class="s-unit">USD</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">Cash (USD Reserve)</div>
+        <div class="s-val" id="statCash">–</div>
+        <div class="s-unit">USD — used as Cash in formula</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">Fully Diluted Shares</div>
+        <div class="s-val" id="statShares">–</div>
+        <div class="s-unit">Shares</div>
+      </div>
+      <div class="stat-card">
+        <div class="s-label">Net BTC Equity</div>
+        <div class="s-val green" id="statEquity">–</div>
+        <div class="s-unit">USD (BTC Value − Debt − Pref + Cash)</div>
+      </div>
+    </div>
+
+    <!-- Formula Breakdown -->
+    <div class="formula-card">
+      <div class="formula-title">🧮 Formula Breakdown</div>
+      <div class="formula-text">
+        (<span class="highlight">Diluted Shares</span> × Implied Price) + Debt + Preferred − Cash = <span
+          class="highlight">BTC Price</span> × BTC Amount
+        <br><br>
+        ∴ Implied Price = (<span class="highlight">BTC Value</span> − Debt − Preferred + Cash) ÷ Diluted Shares
+        <br><br>
+        = <span class="value-inline" id="formulaBtcVal">–</span> − <span class="value-inline" id="formulaDebt">–</span>
+        − <span class="value-inline" id="formulaPref">–</span> + <span class="value-inline" id="formulaCash">–</span>
+        ÷ <span class="value-inline" id="formulaShares">–</span>
+        = <span class="highlight" id="formulaResult">–</span>
+      </div>
+    </div>
+
+    <!-- History Chart -->
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="section-title" style="margin:0">📈 Price History</div>
+        <div class="chart-legend">
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #f7941d;"></div>
+            <span>Implied Fair Value</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot" style="background: #8a9ab5;"></div>
+            <span>MSTR Market Price</span>
+          </div>
+        </div>
+      </div>
+      <div class="chart-container">
+        <canvas id="historyChart"></canvas>
+      </div>
+    </div>
+
+    <footer>
+      Data sourced from <a href="https://www.strategy.com" target="_blank">strategy.com</a> &amp; CoinGecko.
+      Refreshes daily after US market close (4:05 PM ET).
+      &nbsp;·&nbsp; BTC Treasury Implied Value <b>v1.0</b>
+    </footer>
+  </div>
+
+  <script>
+    /* ── Utilities ──────────────────────────────────────────────────────── */
+    const fmt = (n, dec = 2) =>
+      n == null ? '–' : new Intl.NumberFormat('en-US', {
+        minimumFractionDigits: dec,
+        maximumFractionDigits: dec
+      }).format(n);
+
+    const fmtCcy = (n, dec = 2) => n == null ? '–' : '$' + fmt(n, dec);
+    const fmtBig = (n) => {
+      if (n == null) return '–';
+      if (Math.abs(n) >= 1e9) return '$' + fmt(n / 1e9, 2) + 'B';
+      if (Math.abs(n) >= 1e6) return '$' + fmt(n / 1e6, 2) + 'M';
+      return fmtCcy(n);
+    };
+    const fmtNum = (n) => n == null ? '–' : new Intl.NumberFormat('en-US').format(Math.round(n));
+
+    /* ── Slider state ───────────────────────────────────────────────────── */
+    let _latestData = null;   // full snapshot from API
+    // Slider: 0–1000 steps mapping to 10% – 300% of spot price
+    const SLIDER_MIN_PCT = 0.10;
+    const SLIDER_MAX_PCT = 3.00;
+    const SLIDER_STEPS = 1000;
+    // step where price = exactly 100% of spot:
+    // pct = MIN + (MAX-MIN)*(step/STEPS) = 1.0
+    // step = (1.0 - MIN)/(MAX-MIN)*STEPS = (0.90/2.90)*1000 ≈ 310
+    const SLIDER_SPOT = 310;
+
+    function stepToPrice(step, spotPrice) {
+      // Linear interpolation: step 0 → 10% of spot, step 1000 → 300% of spot
+      const pct = SLIDER_MIN_PCT + (SLIDER_MAX_PCT - SLIDER_MIN_PCT) * (step / SLIDER_STEPS);
+      return spotPrice * pct;
+    }
+
+    function calcImplied(btcPrice, data) {
+      if (!data) return null;
+      const btcVal = btcPrice * data.btc_amount;
+      const equity = btcVal - data.debt_usd - data.preferred_usd + data.cash_usd;
+      return { implied: equity / data.diluted_shares, btcVal, equity };
+    }
+
+    function updateSliderTrack(slider) {
+      const pct = ((slider.value - slider.min) / (slider.max - slider.min)) * 100;
+      slider.style.setProperty('--pct', pct + '%');
+    }
+
+    /* Core: update all scenario cards for a given btcPrice */
+    function updateScenario(btcPrice) {
+      if (!_latestData) return;
+
+      const inp = document.getElementById('btcPriceInput');
+      inp.value = Math.round(btcPrice);
+
+      // Sync slider position
+      const slider = document.getElementById('btcSlider');
+      const spot = _latestData.btc_price;
+      const rawPct = (btcPrice / spot - SLIDER_MIN_PCT) / (SLIDER_MAX_PCT - SLIDER_MIN_PCT);
+      const step = Math.max(0, Math.min(SLIDER_STEPS, Math.round(rawPct * SLIDER_STEPS)));
+      slider.value = step;
+      updateSliderTrack(slider);
+
+      const isSpot = Math.abs(btcPrice - spot) < 100;
+      document.getElementById('spotBadge').classList.toggle('active', isSpot);
+
+      const res = calcImplied(btcPrice, _latestData);
+      if (!res) return;
+
+      const spotImplied = _latestData.implied_price;
+      const impliedDiff = res.implied - spotImplied;
+      const impliedDiffPct = (impliedDiff / spotImplied) * 100;
+      const btcValDiff = res.btcVal - _latestData.btc_value_usd;
+      const discPct = ((res.implied - _latestData.current_price) / res.implied) * 100;
+      const isUnder = _latestData.current_price <= res.implied;
+      const cls = isUnder ? 'undervalued' : (discPct > -5 ? 'fair' : 'overvalued');
+      const signalLabel = isUnder ? '✅ UNDERVALUED' : (discPct > -5 ? '⚖️ FAIR VALUE' : '🔴 OVERVALUED');
+
+      // Fair value highlight card
+      document.getElementById('fvcImplied').textContent = fmtCcy(res.implied);
+      const chgSign = impliedDiff >= 0 ? '+' : '';
+      document.getElementById('fvcVsSpot').textContent =
+        `${chgSign}${fmtCcy(impliedDiff)} (${chgSign}${impliedDiffPct.toFixed(1)}%) vs spot implied`;
+      const fvcBadge = document.getElementById('fvcBadge');
+      fvcBadge.textContent = signalLabel;
+      fvcBadge.className = 'fvc-badge ' + cls;
+
+      // Detail cards
+      document.getElementById('sicBtcVal').textContent = fmtBig(res.btcVal);
+      const bvSign = btcValDiff >= 0 ? '+' : '';
+      document.getElementById('sicBtcValChg').textContent =
+        `${bvSign}${fmtBig(btcValDiff)} vs spot`;
+
+      const sigEl = document.getElementById('sicSignal');
+      sigEl.textContent = `${chgSign}${discPct.toFixed(1)}%`;
+      sigEl.className = 'sic-val ' + (isUnder ? 'up' : (discPct > -5 ? 'neu' : 'down'));
+      document.getElementById('sicDiscount').textContent =
+        isUnder ? 'discount to current price' : 'premium over current price';
+
+      const vsEl = document.getElementById('sicVsCurrent');
+      vsEl.textContent = fmtCcy(res.implied - _latestData.current_price);
+      vsEl.className = 'sic-val ' + (res.implied >= _latestData.current_price ? 'up' : 'down');
+    }
+
+    function onSliderMove(step) {
+      if (!_latestData) return;
+      const btcPrice = stepToPrice(parseInt(step), _latestData.btc_price);
+      updateScenario(btcPrice);
+    }
+
+    /* Direct price input handlers */
+    function onPriceInput(val) {
+      const price = parseFloat(val);
+      if (!isNaN(price) && price > 0) updateScenario(price);
+    }
+
+    function onPriceKey(e) {
+      if (e.key === 'Escape') resetToSpot();
+    }
+
+    function resetToSpot() {
+      if (!_latestData) return;
+      updateScenario(_latestData.btc_price);
+    }
+
+    function initSlider(data) {
+      const spot = data.btc_price;
+      const slider = document.getElementById('btcSlider');
+      slider.value = SLIDER_SPOT;
+      updateSliderTrack(slider);
+      document.getElementById('sliderMin').textContent = fmtCcy(spot * SLIDER_MIN_PCT, 0);
+      document.getElementById('sliderMax').textContent = fmtCcy(spot * SLIDER_MAX_PCT, 0);
+      updateScenario(spot); // set input + all cards to spot
+    }
+
+    /* ── Apply data to DOM ──────────────────────────────────────────────── */
+    function applyData(d) {
+      const cls = d.is_undervalued ? 'undervalued'
+        : (d.discount_pct > -5 ? 'fair' : 'overvalued');
+
+      // Signal banner
+      const banner = document.getElementById('signalBanner');
+      banner.className = 'signal-banner ' + cls;
+      const badge = document.getElementById('signalBadge');
+      badge.className = 'signal-badge ' + cls;
+      document.getElementById('signalText').textContent =
+        (d.is_undervalued ? '✅' : d.discount_pct > -5 ? '⚖️' : '🔴') + '  ' + (d.signal || '–');
+      document.getElementById('signalDesc').textContent =
+        d.is_undervalued
+          ? `MSTR is trading BELOW its BTC-implied fair value`
+          : `MSTR is trading ${d.discount_pct < 0 ? 'ABOVE' : 'AT'} its BTC-implied fair value`;
+
+      const discEl = document.getElementById('discountLabel');
+      discEl.className = 'discount-label ' + cls;
+      const pct = d.discount_pct;
+      discEl.textContent = pct == null ? '–'
+        : (pct >= 0 ? '+' : '') + fmt(pct, 1) + '%';
+      document.getElementById('discountSub').textContent =
+        pct >= 0 ? 'Discount to Implied Fair Value' : 'Premium over Implied Fair Value';
+
+      // Prices
+      document.getElementById('currentPrice').textContent = fmtCcy(d.current_price);
+      document.getElementById('impliedPrice').textContent = fmtCcy(d.implied_price);
+      document.getElementById('marketCap').textContent =
+        'Market Cap: ' + fmtBig(d.market_cap_usd);
+      document.getElementById('btcEquityVal').textContent =
+        'BTC Equity: ' + fmtBig(d.equity_value_usd);
+
+      // Arrow
+      const arrow = document.getElementById('arrowIndicator');
+      arrow.textContent = d.is_undervalued ? '⬇️' : '⬆️';
+
+      // Stats
+      document.getElementById('statBtcAmount').textContent = fmtNum(d.btc_amount);
+      document.getElementById('statBtcPrice').textContent = fmtCcy(d.btc_price, 0);
+      document.getElementById('statBtcValue').textContent = fmtBig(d.btc_value_usd);
+      document.getElementById('statDebt').textContent = fmtBig(d.debt_usd);
+      document.getElementById('statPref').textContent = fmtBig(d.preferred_usd);
+      document.getElementById('statCash').textContent = fmtBig(d.cash_usd);
+      document.getElementById('statShares').textContent = fmtNum(d.diluted_shares);
+      document.getElementById('statEquity').textContent = fmtBig(d.equity_value_usd);
+
+      // Formula
+      document.getElementById('formulaBtcVal').textContent = fmtBig(d.btc_value_usd);
+      document.getElementById('formulaDebt').textContent = fmtBig(d.debt_usd);
+      document.getElementById('formulaPref').textContent = fmtBig(d.preferred_usd);
+      document.getElementById('formulaCash').textContent = fmtBig(d.cash_usd);
+      document.getElementById('formulaShares').textContent = fmtNum(d.diluted_shares);
+      document.getElementById('formulaResult').textContent = fmtCcy(d.implied_price);
+
+      // Timestamp
+      const ts = d.captured_at
+        ? new Date(d.captured_at + 'Z').toLocaleString('en-US', {
+          timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'short'
+        }) + ' ET'
+        : d.fetched_at_et || '–';
+      document.getElementById('lastUpdated').textContent = 'Last updated: ' + ts;
+    }
+
+    /* ── Chart ──────────────────────────────────────────────────────────── */
+    let chart = null;
+
+    function buildChart(history) {
+      const labels = history.map(h => {
+        const d = new Date(h.captured_at + 'Z');
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      });
+      const implied = history.map(h => h.implied_price);
+      const market = history.map(h => h.current_price);
+
+      const ctx = document.getElementById('historyChart').getContext('2d');
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'Implied Fair Value',
+              data: implied,
+              borderColor: '#f7941d',
+              backgroundColor: 'rgba(247,148,29,.08)',
+              borderWidth: 2.5,
+              pointRadius: 3,
+              pointHoverRadius: 6,
+              fill: true,
+              tension: .35,
+            },
+            {
+              label: 'MSTR Market Price',
+              data: market,
+              borderColor: '#8a9ab5',
+              backgroundColor: 'rgba(138,154,181,.04)',
+              borderWidth: 2,
+              pointRadius: 3,
+              pointHoverRadius: 6,
+              fill: true,
+              tension: .35,
+            }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0d1421',
+              borderColor: 'rgba(255,255,255,.08)',
+              borderWidth: 1,
+              titleColor: '#8a9ab5',
+              bodyColor: '#f0f4ff',
+              callbacks: {
+                label: ctx => ` ${ctx.dataset.label}: $${ctx.parsed.y.toFixed(2)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { color: 'rgba(255,255,255,.04)' },
+              ticks: { color: '#4a5568', maxTicksLimit: 10 },
+            },
+            y: {
+              grid: { color: 'rgba(255,255,255,.04)' },
+              ticks: {
+                color: '#4a5568',
+                callback: v => '$' + v.toFixed(0)
+              }
+            }
+          }
+        }
+      });
+    }
+
+    /* ── Fetch & render ─────────────────────────────────────────────────── */
+    async function loadData() {
+      try {
+        const [latestRes, histRes] = await Promise.all([
+          fetch('/api/data'),
+          fetch('/api/history?limit=90')
+        ]);
+        if (!latestRes.ok) throw new Error(latestRes.statusText);
+        const latest = await latestRes.json();
+        const history = await histRes.json();
+
+        _latestData = latest;
+        applyData(latest);
+        initSlider(latest);
+        if (history.length > 1) buildChart(history);
+      } catch (err) {
+        console.error('Failed to load data:', err);
+        document.getElementById('lastUpdated').textContent = '⚠ Could not load data';
+      }
+    }
+
+    async function triggerRefresh() {
+      const btn = document.getElementById('refreshBtn');
+      btn.disabled = true;
+      btn.textContent = '⟳ Refreshing…';
+      try {
+        const res = await fetch('/api/refresh', { method: 'POST' });
+        if (!res.ok) throw new Error(await res.text());
+        await loadData();
+      } catch (err) {
+        alert('Refresh failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '⟳ Refresh Now';
+      }
+    }
+
+    // Initial load + auto-refresh every 5 minutes
+    loadData();
+    setInterval(loadData, 5 * 60 * 1000);
+  </script>
+</body>
+
+</html>

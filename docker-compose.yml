@@ -1,0 +1,33 @@
+services:
+  btc-treasury:
+    build: .
+    image: btc-treasury:1.0
+    container_name: btc-treasury
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Persist SQLite DB across container restarts
+      - ./data:/app/data
+      # Live-mount frontend so HTML edits take effect on restart (no rebuild needed)
+      - ./frontend:/app/frontend
+    env_file:
+      - .env
+    environment:
+      - TZ=America/New_York
+      - DB_PATH=/app/data/treasury.db
+
+    # Limit resource usage to stay within GCP e2-micro free tier
+    # e2-micro: 2 vCPU burst, 1 GB RAM
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
