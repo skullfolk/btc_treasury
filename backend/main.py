@@ -161,6 +161,23 @@ async def manual_refresh(
         raise HTTPException(status_code=500, detail=str(exc))
 
 
+@app.post("/api/test-report")
+async def test_daily_report():
+    """Manually trigger the daily Telegram report for testing."""
+    from backend.refresh import do_refresh_all
+    from backend.notifier import send_daily_report
+    try:
+        results = do_refresh_all()
+        success = send_daily_report(results)
+        return JSONResponse({
+            "status": "ok",
+            "sent": success,
+        })
+    except Exception as exc:
+        logger.error("Test report error: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
 @app.get("/api/companies")
 async def list_companies():
     """Returns metadata for all supported companies."""
