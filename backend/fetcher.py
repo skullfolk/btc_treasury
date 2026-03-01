@@ -205,234 +205,95 @@ def fetch_mstr() -> dict:
 
 
 # ===========================================================================
-#  ASST / Strive
+#  ASST / Strive  —  uses data.strategytracker.com versioned JSON API
+# ===========================================================================
+#
+# The treasury.strive.com site is client-side rendered (no static HTML data).
+# The real data comes from a versioned GCS-backed JSON endpoint:
+#   Step 1: GET https://data.strategytracker.com/latest.json
+#           → {"version": "20260301T130352Z", ...}
+#   Step 2: GET https://data.strategytracker.com/ASST.v{version}.json
+#           → full company metrics including shares, BTC, price, debt, cash
 # ===========================================================================
 
-def _strive_find_kv(soup: BeautifulSoup, label_pattern: str) -> str | None:
+STRATEGYTRACKER_LATEST = "https://data.strategytracker.com/latest.json"
+STRATEGYTRACKER_CO_URL = "https://data.strategytracker.com/{ticker}.v{version}.json"
+
+
+def _fetch_strategytracker(ticker: str) -> dict:
     """
-    Walk all text nodes to find a value paired with a matching label.
-    The Strive site renders KPI boxes as label + value in sibling/parent elements.
-    Strategy: find the label text, then look for the next numeric-looking sibling.
+    Fetch company data from data.strategytracker.com.
+    Returns the raw JSON dict for the given ticker.
     """
-    # Try finding by aria-label or title attributes first
-    for el in soup.find_all(attrs={"aria-label": re.compile(label_pattern, re.I)}):
-        text = el.get_text(strip=True)
-        if text:
-            return text
+    logger.info("[%s] Fetching latest version from strategytracker.com…", ticker)
+    latest_resp = requests.get(STRATEGYTRACKER_LATEST, headers=HEADERS, timeout=15)
+    latest_resp.raise_for_status()
+    version = latest_resp.json()["version"]
+    logger.info("[%s] StrategyTracker version: %s", ticker, version)
 
-    # Walk all elements, find the label, take the adjacent value
-    all_text = [(el, el.get_text(strip=True)) for el in soup.find_all(True)]
-    for i, (el, txt) in enumerate(all_text):
-        if re.search(label_pattern, txt, re.I) and len(txt) < 80:
-            # Look in the next few siblings for a number
-            for _, next_txt in all_text[i + 1: i + 6]:
-                # Match values like $7.94, $500.61M, 13,131.8, 90,797,112
-                if re.search(r"[\d,]+\.?\d*[BMK]?", next_txt) and len(next_txt) < 30:
-                    return next_txt
-    return None
-
-
-def _strive_extract_metric(soup: BeautifulSoup, patterns: list[str]) -> float:
-    """Try multiple label patterns and return first non-zero parsed value."""
-    for pattern in patterns:
-        raw = _strive_find_kv(soup, pattern)
-        if raw:
-            try:
-                # Strip dollar signs and leading $ for _parse_num
-                val = _parse_num(raw)
-                if val != 0.0:
-                    logger.debug("Strive metric %r = %s → %.4g", pattern, raw, val)
-                    return val
-            except ValueError:
-                continue
-    return 0.0
-
-
-def _strive_scrape_home() -> dict:
-    """Scrape treasury.strive.com Home tab for price, market cap, EV, BTC."""
-    soup = _soup(STRIVE_HOME_URL)
-    page_text = soup.get_text(separator="\n")
-
-    # --- Structured extraction using regex on full page text -----------------
-    def _find_after(label_re: str, text: str = page_text) -> str | None:
-        """Find first $X or number that follows a label in page text."""
-        m = re.search(
-            r"(?i)" + label_re + r"[^$\d]{0,30}([$]?[\d,]+\.?\d*\s*[BMK]?)",
-            text
-        )
-        return m.group(1).strip() if m else None
-
-    def _extract(label_re: str) -> float:
-        raw = _find_after(label_re)
-        if raw:
-            try:
-                return _parse_num(raw)
-            except ValueError:
-                pass
-        return 0.0
-
-    # Stock price — look for "Stock Price" or a prominent small number near ASST
-    current_price  = _extract(r"stock\s*price|share\s*price|ASST\s*price")
-    market_cap_usd = _extract(r"market\s*cap")
-    ent_val_usd    = _extract(r"enterprise\s*value|EV\b")
-    btc_amount     = _extract(r"bitcoin\s*holdings?|btc\s*holdings?|total\s*btc")
-    btc_value_usd  = _extract(r"bitcoin\s*nav|btc\s*nav|btc\s*value|bitcoin\s*value")
-
-    # Fallback: pattern-match specific KPI boxes in the HTML
-    # The site renders data in <div> with labels and values
-    for block in soup.find_all(["div", "section", "article"]):
-        block_txt = block.get_text(separator=" ", strip=True)
-        if len(block_txt) > 300:
-            continue  # skip large containers
-
-        if current_price == 0 and re.search(r"stock\s*price|share\s*price", block_txt, re.I):
-            m = re.search(r"\$?([\d]+\.[\d]{2})\b", block_txt)
-            if m:
-                current_price = float(m.group(1))
-
-        if market_cap_usd == 0 and re.search(r"market\s*cap", block_txt, re.I):
-            m = re.search(r"\$?([\d,]+\.?\d*)\s*M", block_txt)
-            if m:
-                market_cap_usd = float(m.group(1).replace(",", "")) * 1_000_000
-
-        if ent_val_usd == 0 and re.search(r"enterprise\s*value", block_txt, re.I):
-            m = re.search(r"\$?([\d,]+\.?\d*)\s*M", block_txt)
-            if m:
-                ent_val_usd = float(m.group(1).replace(",", "")) * 1_000_000
-
-        if btc_amount == 0 and re.search(r"bitcoin\s*holdings?|₿", block_txt, re.I):
-            m = re.search(r"([\d,]+\.?\d*)\s*₿", block_txt)
-            if m:
-                btc_amount = float(m.group(1).replace(",", ""))
-
-    logger.info(
-        "[ASST] Home: price=$%.2f  mktcap=$%.0fM  EV=$%.0fM  BTC=%.1f",
-        current_price, market_cap_usd / 1e6, ent_val_usd / 1e6, btc_amount
-    )
-    return {
-        "current_price":  current_price,
-        "market_cap_usd": market_cap_usd,
-        "ent_val_usd":    ent_val_usd,
-        "btc_amount":     btc_amount,
-        "btc_value_usd":  btc_value_usd,
-    }
-
-
-def _strive_scrape_credit() -> dict:
-    """Scrape Credit tab for debt and preferred."""
-    soup = _soup(STRIVE_CREDIT_URL)
-    page_text = soup.get_text(separator="\n")
-
-    debt_usd      = 0.0
-    preferred_usd = 0.0
-
-    # Pattern: "Total Debt Outstanding" near a $10.00M-style value
-    m = re.search(
-        r"(?i)total\s*debt\s*outstanding[^$\d]{0,40}\$?([\d,]+\.?\d*)\s*M",
-        page_text
-    )
-    if m:
-        debt_usd = float(m.group(1).replace(",", "")) * 1_000_000
-
-    # Pattern: "Total Preferred Outstanding"
-    m = re.search(
-        r"(?i)total\s*preferred\s*outstanding[^$\d]{0,40}\$?([\d,]+\.?\d*)\s*M",
-        page_text
-    )
-    if m:
-        preferred_usd = float(m.group(1).replace(",", "")) * 1_000_000
-
-    # Fallback — scan small divs
-    if debt_usd == 0 or preferred_usd == 0:
-        for block in soup.find_all(["div", "tr", "li"]):
-            block_txt = block.get_text(separator=" ", strip=True)
-            if len(block_txt) > 200:
-                continue
-            if debt_usd == 0 and re.search(r"total\s*debt", block_txt, re.I):
-                m2 = re.search(r"\$?([\d,]+\.?\d*)\s*M", block_txt)
-                if m2:
-                    debt_usd = float(m2.group(1).replace(",", "")) * 1_000_000
-            if preferred_usd == 0 and re.search(r"total\s*preferred", block_txt, re.I):
-                m2 = re.search(r"\$?([\d,]+\.?\d*)\s*M", block_txt)
-                if m2:
-                    preferred_usd = float(m2.group(1).replace(",", "")) * 1_000_000
-
-    logger.info("[ASST] Credit: debt=$%.0fM  pref=$%.0fM",
-                debt_usd / 1e6, preferred_usd / 1e6)
-    return {"debt_usd": debt_usd, "preferred_usd": preferred_usd}
-
-
-def _strive_scrape_shares() -> dict:
-    """Scrape Shares tab for fully diluted shares outstanding."""
-    soup = _soup(STRIVE_SHARES_URL)
-    page_text = soup.get_text(separator="\n")
-
-    diluted_shares = 0.0
-
-    # Look for "Assumed Diluted" pattern (same naming as Strategy)
-    m = re.search(
-        r"(?i)assumed\s*diluted[^0-9]{0,40}([\d,]+)\b",
-        page_text
-    )
-    if m:
-        diluted_shares = float(m.group(1).replace(",", ""))
-
-    # Fallback: "Effective Diluted (excl. Warrants)"
-    if diluted_shares == 0:
-        m = re.search(
-            r"(?i)effective\s*diluted[^0-9]{0,40}([\d,]+)\b",
-            page_text
-        )
-        if m:
-            diluted_shares = float(m.group(1).replace(",", ""))
-
-    # Fallback: largest bare integer on the page that could be share count (> 50M)
-    if diluted_shares == 0:
-        candidates = re.findall(r"\b([\d,]{8,})\b", page_text)
-        for c in candidates:
-            val = float(c.replace(",", ""))
-            if val > 50_000_000:
-                diluted_shares = val
-                break
-
-    logger.info("[ASST] Shares: diluted=%.0f", diluted_shares)
-    return {"diluted_shares": diluted_shares}
+    url = STRATEGYTRACKER_CO_URL.format(ticker=ticker.upper(), version=version)
+    logger.info("[%s] Fetching company data: %s", ticker, url)
+    data_resp = requests.get(url, headers=HEADERS, timeout=15)
+    data_resp.raise_for_status()
+    return data_resp.json()
 
 
 def fetch_strive() -> dict:
-    """Fetch all Strive (ASST) inputs. Returns normalised dict."""
-    logger.info("[ASST] Fetching home tab…")
-    home = _strive_scrape_home()
+    """Fetch all Strive (ASST) inputs via strategytracker.com JSON API.
 
-    logger.info("[ASST] Fetching credit tab…")
-    credit = _strive_scrape_credit()
+    JSON schema: { "companies": { "ASST": { "processedMetrics": {...} } } }
+    """
+    logger.info("[ASST] Fetching from StrategyTracker API…")
+    raw = _fetch_strategytracker("ASST")
 
-    logger.info("[ASST] Fetching shares tab…")
-    shares = _strive_scrape_shares()
+    # Navigate into the nested structure
+    try:
+        d = raw["companies"]["ASST"]["processedMetrics"]
+    except (KeyError, TypeError) as exc:
+        raise RuntimeError(
+            f"[ASST] Unexpected StrategyTracker JSON shape: {exc}. "
+            f"Top-level keys: {list(raw.keys())}"
+        ) from exc
 
-    # Derive cash from EV formula
-    cash = _derive_cash_from_ev(
-        market_cap_usd=home["market_cap_usd"],
-        debt_usd=credit["debt_usd"],
-        preferred_usd=credit["preferred_usd"],
-        ent_val_usd=home["ent_val_usd"],
+    # All monetary values are already in raw USD in the API response
+    current_price  = float(d.get("stockPrice", 0) or 0)
+    btc_amount     = float(d.get("latestBtcBalance", 0) or 0)
+    # latestDilutedShares = Assumed Diluted Shares Outstanding (90M) as shown on treasury.strive.com
+    diluted_shares = float(d.get("latestDilutedShares", 0) or 0)
+    debt_usd       = float(d.get("latestDebt", 0) or 0)
+    cash_usd       = float(d.get("latestCashBalance", 0) or 0)
+    market_cap_usd = float(d.get("marketCapBasic", 0) or 0)
+
+    # Preferred stock: sum notional USD from preferredStocks list
+    preferred_usd = 0.0
+    for ps in raw.get("companies", {}).get("ASST", {}).get("processedMetrics", {}).get(
+        "preferredStocks", []
+    ):
+        preferred_usd += float(ps.get("notionalUSD", 0) or 0)
+
+    logger.info(
+        "[ASST] price=$%.2f  BTC=%.1f  effShares=%.0f  debt=$%.0fM  "
+        "pref=$%.0fM  cash=$%.0fM  mktcap=$%.0fM",
+        current_price, btc_amount, diluted_shares,
+        debt_usd / 1e6, preferred_usd / 1e6, cash_usd / 1e6, market_cap_usd / 1e6,
     )
 
     return {
         "company":        "ASST",
         "ticker":         "ASST",
         "company_name":   "Strive Asset Management",
-        "current_price":  home["current_price"],
-        "debt_usd":       credit["debt_usd"],
-        "preferred_usd":  credit["preferred_usd"],
-        "market_cap_usd": home["market_cap_usd"],
-        "cash_usd":       cash,
+        "current_price":  current_price,
+        "debt_usd":       debt_usd,
+        "preferred_usd":  preferred_usd,
+        "market_cap_usd": market_cap_usd,
+        "cash_usd":       cash_usd,
         "data_date":      datetime.now(pytz.timezone("America/New_York")).strftime(
                               "%m/%d/%Y %I:%M %p ET"
                           ),
-        "diluted_shares": shares["diluted_shares"],
-        "btc_amount":     home["btc_amount"],
+        "diluted_shares": diluted_shares,
+        "btc_amount":     btc_amount,
     }
+
 
 
 # ===========================================================================
