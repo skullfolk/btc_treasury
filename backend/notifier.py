@@ -1,6 +1,6 @@
 """
 Telegram notification module.
-Sends an alert when MSTR market price is at or below BTC-implied fair value.
+Sends an alert when a company's market price is at or below BTC-implied fair value.
 """
 
 import logging
@@ -15,20 +15,23 @@ TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# Company display names for Telegram messages
+_COMPANY_LABELS = {
+    "MSTR": "Strategy (MicroStrategy)",
+    "ASST": "Strive Asset Management",
+}
+
 
 def send_telegram(message: str) -> bool:
-    """
-    Send a plain-text message via the configured Telegram bot.
-    Returns True on success, False on failure.
-    """
+    """Send a plain-text / HTML message. Returns True on success."""
     if not BOT_TOKEN or not CHAT_ID:
         logger.warning("Telegram not configured — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID missing.")
         return False
 
     url = TELEGRAM_API.format(token=BOT_TOKEN)
     payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
+        "chat_id":  CHAT_ID,
+        "text":     message,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
@@ -42,20 +45,22 @@ def send_telegram(message: str) -> bool:
         return False
 
 
-def format_alert(data: dict) -> str:
-    """Build the Telegram alert message from a snapshot dict."""
-    def _big(n):
+def format_alert(data: dict, company: str = "MSTR") -> str:
+    """Build the Telegram HTML alert message."""
+    def _big(n: float | None) -> str:
         if n is None:
             return "–"
         if abs(n) >= 1e9:
-            return f"${n/1e9:.2f}B"
+            return f"${n / 1e9:.2f}B"
         if abs(n) >= 1e6:
-            return f"${n/1e6:.2f}M"
+            return f"${n / 1e6:.2f}M"
         return f"${n:,.2f}"
 
-    sign = "+" if data["discount_pct"] >= 0 else ""
+    sign         = "+" if data["discount_pct"] >= 0 else ""
+    company_name = _COMPANY_LABELS.get(company.upper(), company)
+
     return (
-        "🟢 <b>MSTR UNDERVALUED ALERT</b>\n"
+        f"🟢 <b>{company_name} ({company.upper()}) — UNDERVALUED ALERT</b>\n"
         "\n"
         f"📊 <b>Market Price :</b>  <code>${data['current_price']:.2f}</code>\n"
         f"⭐ <b>Implied Value :</b>  <code>${data['implied_price']:.2f}</code>\n"
@@ -73,15 +78,10 @@ def format_alert(data: dict) -> str:
     )
 
 
-def maybe_notify(data: dict) -> bool:
-    """
-    Send a Telegram alert only when market price ≤ implied price.
-    Returns True if a message was sent.
-    """
+def maybe_notify(data: dict, company: str = "MSTR") -> bool:
+    """Send alert only when market price ≤ implied price. Returns True if sent."""
     if not data.get("is_undervalued"):
-        logger.info("Signal is %s — no Telegram alert.", data.get("signal", "N/A"))
+        logger.info("[%s] Signal=%s — no Telegram alert.", company, data.get("signal", "N/A"))
         return False
-
-    logger.info("Signal is UNDERVALUED — sending Telegram alert…")
-    message = format_alert(data)
-    return send_telegram(message)
+    logger.info("[%s] Signal=UNDERVALUED — sending Telegram alert…", company)
+    return send_telegram(format_alert(data, company=company))

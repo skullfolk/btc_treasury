@@ -4,9 +4,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MSTR BTC Treasury Implied Value</title>
+  <title>BTC Treasury Implied Value</title>
   <meta name="description"
-    content="Real-time dashboard comparing MicroStrategy stock price against its BTC-implied fair value." />
+    content="Multi-company BTC Treasury dashboard — compare MSTR and ASST stock prices against their BTC-implied fair values." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -31,6 +31,7 @@
       --border-hi: rgba(255, 170, 30, .2);
       --accent: #f7941d;
       --accent-dim: #c97212;
+      --accent-rgb: 247, 148, 29;
       --green: #00e676;
       --green-dim: #00b85e;
       --red: #ff4e6a;
@@ -44,6 +45,88 @@
       --radius: 16px;
       --radius-sm: 10px;
       --shadow: 0 8px 40px rgba(0, 0, 0, .6);
+    }
+
+    /* ── Company Tab Bar ─────────────────────────────────────────────── */
+    .company-tab-bar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(8, 12, 20, .95);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid rgba(255, 255, 255, .06);
+      display: flex;
+      align-items: center;
+      padding: 0 clamp(16px, 4vw, 48px);
+      gap: 4px;
+    }
+
+    .ctb-label {
+      font-size: .65rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-right: 12px;
+      white-space: nowrap;
+    }
+
+    .ctb-tab {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 20px;
+      font-size: .82rem;
+      font-weight: 600;
+      color: var(--text-sec);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      position: relative;
+      border-bottom: 2px solid transparent;
+      transition: color .2s;
+      white-space: nowrap;
+    }
+
+    .ctb-tab:hover {
+      color: var(--text-pri);
+    }
+
+    .ctb-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    .ctb-logo {
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: .65rem;
+      font-weight: 900;
+      background: var(--accent);
+      color: #000;
+      flex-shrink: 0;
+    }
+
+    .ctb-ticker {
+      font-family: var(--mono);
+      font-size: .78rem;
+    }
+
+    .ctb-badge {
+      font-size: .6rem;
+      padding: 1px 6px;
+      border-radius: 100px;
+      background: rgba(255, 255, 255, .06);
+      color: var(--text-muted);
+    }
+
+    .ctb-tab.active .ctb-badge {
+      background: rgba(var(--accent-rgb), .15);
+      color: var(--accent);
     }
 
     html {
@@ -843,13 +926,31 @@
 </head>
 
 <body>
+
+  <!-- ── Company Tab Bar ──────────────────────────────────────────────── -->
+  <nav class="company-tab-bar" id="tabBar" aria-label="Company selector">
+    <span class="ctb-label">Company</span>
+    <button class="ctb-tab active" id="tab-MSTR" onclick="switchCompany('MSTR')" aria-current="true">
+      <span class="ctb-logo" style="background:#f7941d">M</span>
+      <span>Strategy</span>
+      <span class="ctb-ticker">MSTR</span>
+      <span class="ctb-badge" id="badge-MSTR">–</span>
+    </button>
+    <button class="ctb-tab" id="tab-ASST" onclick="switchCompany('ASST')" aria-current="false">
+      <span class="ctb-logo" style="background:#ffd740">S</span>
+      <span>Strive</span>
+      <span class="ctb-ticker">ASST</span>
+      <span class="ctb-badge" id="badge-ASST">–</span>
+    </button>
+  </nav>
+
   <div class="container">
 
     <!-- Header -->
     <header>
       <div class="logo">
         <div class="logo-icon">₿</div>
-        <h1>MSTR <span>BTC</span> Treasury</h1>
+        <h1 id="headerTitle">MSTR <span>BTC</span> Treasury</h1>
       </div>
       <div class="header-meta">
         <div class="last-updated" id="lastUpdated">Loading…</div>
@@ -1263,7 +1364,7 @@
               tension: .35,
             },
             {
-              label: 'MSTR Market Price',
+              label: (window._currentCompany || 'MSTR') + ' Market Price',
               data: market,
               borderColor: '#8a9ab5',
               backgroundColor: 'rgba(138,154,181,.04)',
@@ -1308,12 +1409,63 @@
       });
     }
 
+    /* ── Company accent colors ─────────────────────────────────────────────── */
+    const COMPANY_CONFIG = {
+      MSTR: {
+        name: 'Strategy (MicroStrategy)',
+        headerHTML: 'MSTR <span>BTC</span> Treasury',
+        accent: '#f7941d', accentDim: '#c97212', accentRgb: '247,148,29',
+      },
+      ASST: {
+        name: 'Strive Asset Management',
+        headerHTML: 'ASST <span>BTC</span> Treasury',
+        accent: '#ffd740', accentDim: '#c9a900', accentRgb: '255,215,64',
+      },
+    };
+
+    /* Save & expose active company globally */
+    window._currentCompany = new URLSearchParams(location.search).get('company')?.toUpperCase() || 'MSTR';
+
+    function switchCompany(ticker) {
+      if (ticker === window._currentCompany) return;
+      const params = new URLSearchParams(location.search);
+      params.set('company', ticker);
+      history.pushState({}, '', '?' + params.toString());
+      window._currentCompany = ticker;
+      _applyCompanyTheme(ticker);
+      loadData();
+    }
+
+    function _applyCompanyTheme(ticker) {
+      const cfg = COMPANY_CONFIG[ticker] || COMPANY_CONFIG.MSTR;
+      const root = document.documentElement;
+      root.style.setProperty('--accent', cfg.accent);
+      root.style.setProperty('--accent-dim', cfg.accentDim);
+      root.style.setProperty('--accent-rgb', cfg.accentRgb);
+      root.style.setProperty('--border-hi', `rgba(${cfg.accentRgb},.2)`);
+
+      // Update header
+      document.getElementById('headerTitle').innerHTML = cfg.headerHTML;
+      document.title = `${ticker} BTC Treasury Implied Value`;
+
+      // Update tab active states
+      document.querySelectorAll('.ctb-tab').forEach(btn => {
+        const isActive = btn.id === 'tab-' + ticker;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-current', isActive ? 'true' : 'false');
+      });
+    }
+
+    // Apply theme on initial page load
+    _applyCompanyTheme(window._currentCompany);
+
     /* ── Fetch & render ─────────────────────────────────────────────────── */
     async function loadData() {
+      const co = window._currentCompany;
       try {
         const [latestRes, histRes] = await Promise.all([
-          fetch('/api/data'),
-          fetch('/api/history?limit=90')
+          fetch(`/api/data?company=${co}`),
+          fetch(`/api/history?company=${co}&limit=90`)
         ]);
         if (!latestRes.ok) throw new Error(latestRes.statusText);
         const latest = await latestRes.json();
@@ -1323,6 +1475,12 @@
         applyData(latest);
         initSlider(latest);
         if (history.length > 1) buildChart(history);
+
+        // Update tab badge with signal
+        const badgeEl = document.getElementById('badge-' + co);
+        if (badgeEl && latest.signal) {
+          badgeEl.textContent = latest.is_undervalued ? '✅' : (latest.discount_pct > -5 ? '⚖️' : '🔴');
+        }
       } catch (err) {
         console.error('Failed to load data:', err);
         document.getElementById('lastUpdated').textContent = '⚠ Could not load data';
@@ -1330,11 +1488,12 @@
     }
 
     async function triggerRefresh() {
+      const co = window._currentCompany;
       const btn = document.getElementById('refreshBtn');
       btn.disabled = true;
       btn.textContent = '⟳ Refreshing…';
       try {
-        const res = await fetch('/api/refresh', { method: 'POST' });
+        const res = await fetch(`/api/refresh?company=${co}`, { method: 'POST' });
         if (!res.ok) throw new Error(await res.text());
         await loadData();
       } catch (err) {
@@ -1344,6 +1503,13 @@
         btn.textContent = '⟳ Refresh Now';
       }
     }
+
+    // Support browser back/forward between company tabs
+    window.addEventListener('popstate', () => {
+      window._currentCompany = new URLSearchParams(location.search).get('company')?.toUpperCase() || 'MSTR';
+      _applyCompanyTheme(window._currentCompany);
+      loadData();
+    });
 
     // Initial load + auto-refresh every 5 minutes
     loadData();
