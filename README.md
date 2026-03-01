@@ -1,6 +1,10 @@
-# MSTR BTC Treasury Implied Value Dashboard
+# Multi-Company BTC Treasury Implied Value Dashboard
 
-A Dockerized web dashboard that compares MicroStrategy's (MSTR) current stock price against its **BTC-implied fair share price**.
+A Dockerized web dashboard that tracks the Bitcoin holdings of public companies and compares their current stock price against their **BTC-implied fair share price**.
+
+**Supported Companies (v2.x):**
+- **Strategy (MicroStrategy / MSTR)**
+- **Strive Asset Management (ASST)**
 
 ## Formula
 ```
@@ -10,20 +14,44 @@ If **Current Price ≤ Implied Price** → stock is trading at or below BTC-back
 
 ---
 
+## Features
+- **Multi-Company Dashboard:** Seamlessly switch between MSTR and ASST using a sticky tab bar. Dynamic UI theming based on the selected company.
+- **Automated Data Fetching:** Direct JSON API integration with `strategytracker.com` and `strategy.com` for robust, real-time metrics.
+- **Daily Telegram Reports:** Receive a consolidated daily summary message on Telegram for all tracked companies, including market price, implied value, and premium/discount percentages.
+- **Historical Tracking:** Saves daily snapshots to SQLite to plot discount/premium trends over time.
+
+---
+
 ## Quick Start (Local)
 
+### 1. Configure Environment
+Create a `.env` file in the root directory for Telegram notifications (optional):
+```env
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+TELEGRAM_CHAT_ID=your_chat_id_here
+```
+
+### 2. Build & Run
 ```bash
 # Build & run
 docker-compose up --build -d
 
 # Open dashboard
-open http://localhost:8000
+# Windows/Linux: http://localhost:8000
+# macOS: open http://localhost:8000
 
 # View logs
 docker-compose logs -f
+```
 
-# Manual data refresh (skip waiting for 4 PM ET)
-curl -X POST http://localhost:8000/api/refresh
+### 3. Manual Refresh
+Skip waiting for the scheduled 4 PM ET refresh:
+```bash
+# Refresh a specific company
+curl -X POST "http://localhost:8000/api/refresh?company=ASST"
+
+# Refresh all companies
+curl -X POST "http://localhost:8000/api/refresh?company=all"
 ```
 
 ---
@@ -37,16 +65,7 @@ curl -X POST http://localhost:8000/api/refresh
 
 ### Step 1 — Create the VM
 
-In **Google Cloud Console → Compute Engine → Create Instance**:
-
-| Setting | Value |
-|---|---|
-| Machine type | `e2-micro` |
-| Region | `us-central1` (or `us-west1` / `us-east1`) |
-| Boot disk | Debian 12 "Bookworm", **30 GB Standard** |
-| Firewall | ✅ Allow HTTP (port 80) & HTTPS (port 443) |
-
-Or via `gcloud` CLI:
+Via `gcloud` CLI:
 ```bash
 gcloud compute instances create btc-treasury \
   --machine-type=e2-micro \
@@ -81,51 +100,36 @@ chmod +x deploy-gcp.sh
 ./deploy-gcp.sh
 ```
 
-The script will:
-1. Install Docker CE
-2. Build the Docker image
-3. Start the container with `docker-compose up -d`
-
 ### Step 4 — Access the dashboard
 
 ```
 http://<YOUR-VM-EXTERNAL-IP>:8000
 ```
 
-Find your external IP:
-```bash
-gcloud compute instances describe btc-treasury \
-  --zone=us-central1-a \
-  --format='get(networkInterfaces[0].accessConfigs[0].natIP)'
-```
-
 ---
 
 ## Data Sources
 
-| Data | Source |
-|---|---|
-| MSTR Price, Debt, Preferred | `https://api.strategy.com/btc/mstrKpiData` |
-| Fully Diluted Shares, BTC Holdings | `https://www.strategy.com/shares` (scraped) |
-| Cash (USD Reserve) | `https://www.strategy.com/` (scraped) |
-| Live BTC Price | CoinGecko → Binance (fallback) |
+| Company | Data | Source |
+|---|---|---|
+| **MSTR** | Price, Debt, Preferred, Shares | `https://api.strategy.com/btc/mstrKpiData` (with HTML scraping fallback) |
+| **ASST** | Price, Debt, Preferred, Shares | `https://data.strategytracker.com` (Versioned JSON API) |
+| **Global** | Live BTC Price | CoinGecko API → Binance API (fallback) |
 
 ## Refresh Schedule
 
-Data is refreshed **once daily at 21:05 UTC** (4:05 PM US Eastern) on weekdays, after US stock market close.
+Data is refreshed **once daily at 21:05 UTC** (4:05 PM US Eastern) on weekdays, shortly after the US stock market closes. 
 
-You can also trigger a manual refresh:
-```bash
-curl -X POST http://localhost:8000/api/refresh
-```
+At this time, a **Telegram Daily Report** is automatically dispatched to the configured `TELEGRAM_CHAT_ID`.
 
 ## API Endpoints
 
 | Endpoint | Description |
 |---|---|
-| `GET /api/data` | Latest snapshot with all values |
-| `GET /api/history?limit=90` | Historical snapshots (up to 365) |
-| `POST /api/refresh` | Trigger immediate data refresh |
+| `GET /api/companies` | List of supported companies and metadata (color themes, tickers) |
+| `GET /api/data?company=MSTR` | Latest snapshot with all values for the specified company |
+| `GET /api/history?company=MSTR&limit=90` | Historical snapshots for charting |
+| `POST /api/refresh?company=all` | Trigger immediate data refresh (accepts `all` or ticker) |
 | `GET /api/health` | Health check |
 
 ## Project Structure
@@ -133,16 +137,17 @@ curl -X POST http://localhost:8000/api/refresh
 ```
 .
 ├── backend/
-│   ├── main.py         # FastAPI app
-│   ├── fetcher.py      # Data fetching (API + scraping)
-│   ├── calculator.py   # Formula logic
-│   ├── refresh.py      # Orchestrator
+│   ├── main.py         # FastAPI application & server
+│   ├── fetcher.py      # Multi-company data fetching (APIs + Scraping)
+│   ├── calculator.py   # Fair value formula logic
+│   ├── refresh.py      # Orchestrator for data retrieval
 │   ├── scheduler.py    # Daily APScheduler job
 │   ├── database.py     # SQLite schema & queries
+│   ├── notifier.py     # Telegram alerts & daily reports
 │   └── requirements.txt
 ├── frontend/
-│   └── index.html      # Dashboard (Chart.js, vanilla JS)
-├── data/               # SQLite DB (Docker volume)
+│   └── index.html      # Responsive Dashboard (Chart.js, vanilla JS, CSS variables)
+├── data/               # SQLite DB (Docker volume map)
 ├── Dockerfile
 ├── docker-compose.yml
 └── deploy-gcp.sh       # GCP setup script
