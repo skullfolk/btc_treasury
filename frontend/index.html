@@ -1033,7 +1033,7 @@
     <!-- Price Comparison -->
     <div class="price-grid">
       <div class="price-card highlighted">
-        <div class="label">Current MSTR Price</div>
+        <div class="label" id="currentPriceLabel">Current Price</div>
         <div class="price-val" id="currentPrice">$–</div>
         <div class="price-sub" id="marketCap">Market Cap: –</div>
       </div>
@@ -1201,7 +1201,7 @@
           </div>
           <div class="legend-item">
             <div class="legend-dot" style="background: #8a9ab5;"></div>
-            <span>MSTR Market Price</span>
+            <span id="chartLegendMarketPrice">MSTR Market Price</span>
           </div>
         </div>
       </div>
@@ -1288,7 +1288,7 @@
       const impliedDiff = res.implied - spotImplied;
       const impliedDiffPct = (impliedDiff / spotImplied) * 100;
       const btcValDiff = res.btcVal - _latestData.btc_value_usd;
-      const discPct = ((res.implied - _latestData.current_price) / res.implied) * 100;
+      const discPct = ((res.implied - _latestData.current_price) / _latestData.current_price) * 100;
       const isUnder = _latestData.current_price <= res.implied;
       const cls = isUnder ? 'undervalued' : (discPct > -5 ? 'fair' : 'overvalued');
       const signalLabel = isUnder ? '✅ UNDERVALUED' : (discPct > -5 ? '⚖️ FAIR VALUE' : '🔴 OVERVALUED');
@@ -1312,7 +1312,7 @@
       sigEl.textContent = `${discPct > 0 ? '+' : ''}${discPct.toFixed(1)}%`;
       sigEl.className = 'sic-val ' + (isUnder ? 'up' : (discPct > -5 ? 'neu' : 'down'));
       document.getElementById('sicDiscount').textContent =
-        isUnder ? 'discount to current price' : 'premium over current price';
+        isUnder ? 'premium over market price' : 'discount to market price';
 
       const vsEl = document.getElementById('sicVsCurrent');
       vsEl.textContent = fmtCcy(res.implied - _latestData.current_price);
@@ -1364,8 +1364,8 @@
         (d.is_undervalued ? '✅' : d.discount_pct > -5 ? '⚖️' : '🔴') + '  ' + (d.signal || '–');
       document.getElementById('signalDesc').textContent =
         d.is_undervalued
-          ? `MSTR is trading BELOW its BTC-implied fair value`
-          : `MSTR is trading ${d.discount_pct < 0 ? 'ABOVE' : 'AT'} its BTC-implied fair value`;
+          ? `${d.company} is trading BELOW its BTC-implied fair value`
+          : `${d.company} is trading ${d.discount_pct < 0 ? 'ABOVE' : 'AT'} its BTC-implied fair value`;
 
       const discEl = document.getElementById('discountLabel');
       discEl.className = 'discount-label ' + cls;
@@ -1373,9 +1373,10 @@
       discEl.textContent = pct == null ? '–'
         : (pct >= 0 ? '+' : '') + fmt(pct, 1) + '%';
       document.getElementById('discountSub').textContent =
-        pct >= 0 ? 'Discount to Implied Fair Value' : 'Premium over Implied Fair Value';
+        pct >= 0 ? 'Premium over Market Price' : 'Discount to Market Price';
 
       // Prices
+      document.getElementById('currentPriceLabel').textContent = `Current ${d.company} Price`;
       document.getElementById('currentPrice').textContent = fmtCcy(d.current_price);
       document.getElementById('impliedPrice').textContent = fmtCcy(d.implied_price);
       document.getElementById('marketCap').textContent =
@@ -1533,6 +1534,10 @@
       // Update header
       document.getElementById('headerTitle').innerHTML = cfg.headerHTML;
       document.title = `${ticker} BTC Treasury Implied Value`;
+
+      // Update label
+      const legendLabel = document.getElementById('chartLegendMarketPrice');
+      if (legendLabel) legendLabel.textContent = `${ticker} Market Price`;
 
       // Update tab active states
       document.querySelectorAll('.ctb-tab').forEach(btn => {
