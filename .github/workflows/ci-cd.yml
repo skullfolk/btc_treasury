@@ -84,6 +84,8 @@ jobs:
       # Scan with Trivy before pushing
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           image-ref: '${{ env.IMAGE_ID }}:${{ steps.meta.outputs.tag }}'
           format: 'sarif'

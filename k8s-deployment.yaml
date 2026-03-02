@@ -60,6 +60,8 @@ spec:
       labels:
         app: btc-treasury
     spec:
+      imagePullSecrets:
+        - name: ghcr-login-secret
       containers:
         - name: btc-treasury
           # Change this to your actual container registry if pushing image remotely
