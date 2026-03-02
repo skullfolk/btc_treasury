@@ -128,8 +128,8 @@ jobs:
           
           echo "Target Image: ${NEW_IMAGE}"
           # Find and replace the image attribute inside any deployment YAML files
-          # Using regex to match `image: ghcr.io/skullfolk/btc-treasury:*` or `image: btc-treasury:*`
-          find . -name "*.yaml" -type f -exec sed -i "s|image: .*btc-treasury.*|image: ${NEW_IMAGE}|g" {} +
+          # Using regex to match `image: ghcr.io/skullfolk/btc_treasury:*` or `image: btc-treasury:*`
+          find . -name "*.yaml" -type f -exec sed -i -E "s|image: .*btc[-_]treasury.*|image: ${NEW_IMAGE}|g" {} +
           
       - name: Commit and Push to GitOps Repo
         run: |
