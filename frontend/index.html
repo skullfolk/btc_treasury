@@ -621,16 +621,17 @@
 
     /* Fair value highlight */
     .fair-value-card {
-      background: rgba(247, 148, 29, .08);
-      border: 1px solid rgba(247, 148, 29, .3);
-      border-radius: var(--radius-sm);
-      padding: 14px 16px;
+      background: rgba(247, 148, 29, .04);
+      border: 1px solid rgba(247, 148, 29, .2);
+      border-radius: var(--radius);
+      padding: 18px 22px;
       grid-column: 1 / -1;
       /* full width on its own row */
       display: flex;
       align-items: center;
       gap: 24px;
       flex-wrap: wrap;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .2);
     }
 
     .fvc-label {
@@ -652,9 +653,10 @@
     .fvc-badge {
       font-size: .85rem;
       font-weight: 700;
-      padding: 4px 14px;
+      padding: 6px 16px;
       border-radius: 100px;
       margin-left: auto;
+      letter-spacing: .08em;
     }
 
     .fvc-badge.undervalued {
@@ -663,8 +665,8 @@
     }
 
     .fvc-badge.overvalued {
-      background: rgba(255, 78, 106, .15);
-      color: var(--red);
+      background: rgba(255, 78, 106, .2);
+      color: #ff6b81;
     }
 
     .fvc-badge.fair {
@@ -737,10 +739,11 @@
     }
 
     .slider-impact-card {
-      background: rgba(247, 148, 29, .05);
-      border: 1px solid rgba(247, 148, 29, .12);
-      border-radius: var(--radius-sm);
-      padding: 14px 16px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, .2);
     }
 
     .sic-label {
@@ -1300,7 +1303,7 @@
         `${bvSign}${fmtBig(btcValDiff)} vs spot`;
 
       const sigEl = document.getElementById('sicSignal');
-      sigEl.textContent = `${chgSign}${discPct.toFixed(1)}%`;
+      sigEl.textContent = `${discPct > 0 ? '+' : ''}${discPct.toFixed(1)}%`;
       sigEl.className = 'sic-val ' + (isUnder ? 'up' : (discPct > -5 ? 'neu' : 'down'));
       document.getElementById('sicDiscount').textContent =
         isUnder ? 'discount to current price' : 'premium over current price';
