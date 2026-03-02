@@ -1,0 +1,144 @@
+---
+# 1. ConfigMap for environment variables (Non-sensitive)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: btc-treasury-config
+  labels:
+    app: btc-treasury
+data:
+  TZ: "UTC"
+  # Add other non-sensitive env vars here if needed
+
+---
+# 2. Secret for sensitive environment variables (Optional but recommended)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: btc-treasury-secrets
+  labels:
+    app: btc-treasury
+type: Opaque
+stringData:
+  # Replace these with your actual Telegram bot token and chat ID
+  # TELEGRAM_BOT_TOKEN: "your_bot_token"
+  # TELEGRAM_CHAT_ID: "your_chat_id"
+
+---
+# 3. PersistentVolumeClaim for SQLite database storage
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: btc-treasury-data-pvc
+  labels:
+    app: btc-treasury
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# 4. Deployment for the application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: btc-treasury
+  labels:
+    app: btc-treasury
+spec:
+  replicas: 1
+  # Recreate strategy is used because SQLite uses ReadWriteOnce storage
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: btc-treasury
+  template:
+    metadata:
+      labels:
+        app: btc-treasury
+    spec:
+      containers:
+        - name: btc-treasury
+          # Change this to your actual container registry if pushing image remotely
+          # e.g., ghcr.io/yourusername/btc-treasury:v2.5 or docker.io/...
+          image: btc-treasury:v2.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: btc-treasury-config
+            # Uncomment next line if using the Secret above
+            # - secretRef:
+            #     name: btc-treasury-secrets
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+          # Health checks to ensure the app is running
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: btc-treasury-data-pvc
+
+---
+# 5. Service to expose the Deployment internally
+apiVersion: v1
+kind: Service
+metadata:
+  name: btc-treasury-service
+  labels:
+    app: btc-treasury
+spec:
+  type: ClusterIP # Change to NodePort or LoadBalancer if you need external access directly
+  ports:
+    - port: 80
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: btc-treasury
+
+---
+# Example Ingress (Optional - uncomment and configure if using an Ingress Controller like Nginx/Traefik)
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: btc-treasury-ingress
+#   annotations:
+#     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+# spec:
+#   # ingressClassName: nginx
+#   rules:
+#     - host: "btc-treasury.yourdomain.com"
+#       http:
+#         paths:
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: btc-treasury-service
+#                 port:
+#                   number: 80

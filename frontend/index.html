@@ -783,36 +783,84 @@
       background: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 24px 28px;
+      padding: 32px;
       margin-bottom: 28px;
     }
 
     .formula-card .formula-title {
-      font-size: .72rem;
+      font-size: .75rem;
       font-weight: 700;
       letter-spacing: .08em;
       color: var(--text-sec);
       text-transform: uppercase;
-      margin-bottom: 14px;
+      margin-bottom: 24px;
     }
 
-    .formula-text {
+    .formula-layout {
+      display: flex;
+      align-items: center;
+      gap: 16px;
       font-family: var(--mono);
-      font-size: .9rem;
+      font-size: .95rem;
       color: var(--text-pri);
-      line-height: 1.8;
+      overflow-x: auto;
+      padding-bottom: 8px;
     }
 
-    .formula-text .highlight {
+    .formula-layout::-webkit-scrollbar {
+      height: 4px;
+    }
+
+    .formula-layout::-webkit-scrollbar-thumb {
+      background: var(--border-hi);
+      border-radius: 4px;
+    }
+
+    .formula-fraction {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+
+    .formula-numerator {
+      padding: 0 12px 8px;
+      border-bottom: 2px solid var(--border-hi);
+      white-space: nowrap;
+    }
+
+    .formula-denominator {
+      padding: 8px 12px 0;
+      white-space: nowrap;
+    }
+
+    .formula-equals {
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .formula-result {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .formula-layout .highlight {
       color: var(--accent);
-      font-weight: 600;
+      font-weight: 700;
     }
 
-    .formula-text .value-inline {
+    .formula-layout .value-inline {
       color: var(--green);
       background: rgba(0, 230, 118, .08);
-      padding: 1px 6px;
+      padding: 3px 8px;
       border-radius: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .formula-layout .operator {
+      color: var(--text-muted);
+      margin: 0 6px;
+      font-weight: 700;
     }
 
     /* ── Chart ──────────────────────────────────────────────────────── */
@@ -1096,16 +1144,40 @@
     <!-- Formula Breakdown -->
     <div class="formula-card">
       <div class="formula-title">🧮 Formula Breakdown</div>
-      <div class="formula-text">
-        (<span class="highlight">Diluted Shares</span> × Implied Price) + Debt + Preferred − Cash = <span
-          class="highlight">BTC Price</span> × BTC Amount
-        <br><br>
-        ∴ Implied Price = (<span class="highlight">BTC Value</span> − Debt − Preferred + Cash) ÷ Diluted Shares
-        <br><br>
-        = <span class="value-inline" id="formulaBtcVal">–</span> − <span class="value-inline" id="formulaDebt">–</span>
-        − <span class="value-inline" id="formulaPref">–</span> + <span class="value-inline" id="formulaCash">–</span>
-        ÷ <span class="value-inline" id="formulaShares">–</span>
-        = <span class="highlight" id="formulaResult">–</span>
+
+      <div class="formula-layout" style="margin-bottom: 24px;">
+        <div class="formula-result" style="color: var(--text-sec); font-weight: 600;">Implied Price</div>
+        <div class="formula-equals">=</div>
+        <div class="formula-fraction">
+          <div class="formula-numerator">
+            (<span class="highlight">BTC Value</span> <span class="operator">−</span> Debt <span
+              class="operator">−</span> Preferred <span class="operator">+</span> Cash)
+          </div>
+          <div class="formula-denominator">
+            Diluted Shares
+          </div>
+        </div>
+      </div>
+
+      <div class="formula-layout">
+        <div class="formula-equals" style="visibility: hidden;">Implied Price</div>
+        <div class="formula-equals">=</div>
+        <div class="formula-fraction">
+          <div class="formula-numerator">
+            (<span class="value-inline" id="formulaBtcVal">–</span>
+            <span class="operator">−</span> <span class="value-inline" id="formulaDebt">–</span>
+            <span class="operator">−</span> <span class="value-inline" id="formulaPref">–</span>
+            <span class="operator">+</span> <span class="value-inline" id="formulaCash">–</span>)
+          </div>
+          <div class="formula-denominator">
+            <span class="value-inline" id="formulaShares">–</span>
+          </div>
+        </div>
+        <div class="formula-equals" style="color: var(--text-pri); margin-left: 8px;">=</div>
+        <div class="formula-result">
+          <span class="highlight" id="formulaResult"
+            style="font-size: 1.3rem; background: rgba(247,148,29,0.1); padding: 4px 10px; border-radius: 6px;">–</span>
+        </div>
       </div>
     </div>
 

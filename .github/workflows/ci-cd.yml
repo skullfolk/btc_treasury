@@ -1,0 +1,143 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }} # Example: skullfolk/btc-treasury
+
+jobs:
+  # 1. CodeQL Scan
+  analyze:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v3
+      with:
+        languages: python, javascript # Python for backend, JS for frontend
+
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      with:
+        category: "/language:python,javascript"
+
+  # 2. Build Image, Scan with Trivy, and Push to GHCR
+  build-scan-push:
+    name: Build, Run Trivy, and Push to Registry
+    runs-on: ubuntu-latest
+    needs: analyze
+    if: github.event_name == 'push' # Only push image when merged to main, not just PR
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Image Tag
+        id: meta
+        run: |
+          # Format: v1.0.{Run_Number}-{SHA} 
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TAG="v1.0.${{ github.run_number }}-${SHORT_SHA}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "IMAGE_ID=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}" >> $GITHUB_ENV
+
+      - name: Build local image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true # Save image locally to scan with Trivy
+          tags: ${{ env.IMAGE_ID }}:${{ steps.meta.outputs.tag }}
+
+      # Scan with Trivy before pushing
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.IMAGE_ID }}:${{ steps.meta.outputs.tag }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0' # Set to 1 if you want to break the pipeline on vulnerabilities
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Push Docker Image to GHCR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ env.IMAGE_ID }}:${{ steps.meta.outputs.tag }},${{ env.IMAGE_ID }}:latest
+
+
+  # 3. Update Kubernetes Manifests in GitOps repo (ArgoCD trigger)
+  update-gitops:
+    name: Deploy (Update ArgoCD Repo)
+    runs-on: ubuntu-latest
+    needs: build-scan-push
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout GitOps Repository
+        uses: actions/checkout@v4
+        with:
+          repository: skullfolk/Config-Gitops
+          token: ${{ secrets.GITOPS_PAT }} # Requires a Personal Access Token stored in repo secrets
+          path: config-gitops
+
+      - name: Update Image Tag in Kubernetes Deployment
+        env:
+          NEW_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.build-scan-push.outputs.image_tag }}
+        run: |
+          cd config-gitops
+          
+          echo "Target Image: ${NEW_IMAGE}"
+          # Find and replace the image attribute inside any deployment YAML files
+          # Using regex to match `image: ghcr.io/skullfolk/btc-treasury:*` or `image: btc-treasury:*`
+          find . -name "*.yaml" -type f -exec sed -i "s|image: .*btc-treasury.*|image: ${NEW_IMAGE}|g" {} +
+          
+      - name: Commit and Push to GitOps Repo
+        run: |
+          cd config-gitops
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          if git diff --staged --quiet; then
+            echo "No changes to commit. Image tag was identical."
+          else
+            git commit -m "chore: update btc-treasury image to ${{ needs.build-scan-push.outputs.image_tag }}"
+            git push origin main
+          fi
