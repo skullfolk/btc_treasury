@@ -217,13 +217,14 @@ def fetch_mstr() -> dict:
 # ===========================================================================
 
 STRATEGYTRACKER_LATEST = "https://data.strategytracker.com/latest.json"
-STRATEGYTRACKER_CO_URL = "https://data.strategytracker.com/{ticker}.v{version}.json"
+STRATEGYTRACKER_CO_URL = "https://data.strategytracker.com/all.v{version}.json"
 
 
 def _fetch_strategytracker(ticker: str) -> dict:
     """
-    Fetch company data from data.strategytracker.com.
-    Returns the raw JSON dict for the given ticker.
+    Fetch all company data from data.strategytracker.com.
+    We fetch the 'all' payload because requesting specific tickers like '3350.T'
+    directly returns a 403 Forbidden.
     """
     logger.info("[%s] Fetching latest version from strategytracker.com…", ticker)
     latest_resp = requests.get(STRATEGYTRACKER_LATEST, headers=HEADERS, timeout=15)
@@ -231,7 +232,7 @@ def _fetch_strategytracker(ticker: str) -> dict:
     version = latest_resp.json()["version"]
     logger.info("[%s] StrategyTracker version: %s", ticker, version)
 
-    url = STRATEGYTRACKER_CO_URL.format(ticker=ticker.upper(), version=version)
+    url = STRATEGYTRACKER_CO_URL.format(version=version)
     logger.info("[%s] Fetching company data: %s", ticker, url)
     data_resp = requests.get(url, headers=HEADERS, timeout=15)
     data_resp.raise_for_status()
@@ -295,6 +296,55 @@ def fetch_strive() -> dict:
     }
 
 
+def fetch_metaplanet() -> dict:
+    """Fetch all Metaplanet inputs via strategytracker.com JSON API.
+    
+    ticker = '3350.T'
+    The default `stockPrice` is given in JPY. But `currentMarketCap` is already converted to USD.
+    We derive the implied stock price in USD using `marketCapBasic` / `latestDilutedShares`.
+    """
+    logger.info("[META] Fetching from StrategyTracker API…")
+    raw = _fetch_strategytracker("META")
+
+    try:
+        d = raw["companies"]["3350.T"]["processedMetrics"]
+    except (KeyError, TypeError) as exc:
+        raise RuntimeError(f"[META] Unexpected StrategyTracker JSON shape: {exc}") from exc
+
+    btc_amount = float(d.get("latestBtcBalance", 0) or 0)
+    diluted_shares = float(d.get("latestDilutedShares", 0) or 0)
+    debt_usd = float(d.get("latestDebt", 0) or 0)
+    cash_usd = float(d.get("latestCashBalance", 0) or 0)
+    market_cap_usd = float(d.get("marketCapBasic", 0) or 0)
+
+    # Derive USD stock price. Fallback to 0 if no shares or mcap is bad.
+    current_price_usd = 0.0
+    if diluted_shares > 0 and market_cap_usd > 0:
+        current_price_usd = market_cap_usd / diluted_shares
+
+    logger.info(
+        "[META] price(usd)=$%.2f  BTC=%.1f  effShares=%.0f  debt=$%.0fM  "
+        "cash=$%.0fM  mktcap=$%.0fM",
+        current_price_usd, btc_amount, diluted_shares,
+        debt_usd / 1e6, cash_usd / 1e6, market_cap_usd / 1e6,
+    )
+
+    return {
+        "company":        "META",
+        "ticker":         "3350.T",
+        "company_name":   "Metaplanet Inc.",
+        "current_price":  current_price_usd,
+        "debt_usd":       debt_usd,
+        "preferred_usd":  0.0,
+        "market_cap_usd": market_cap_usd,
+        "cash_usd":       cash_usd,
+        "data_date":      datetime.now(pytz.timezone("America/New_York")).strftime(
+                              "%m/%d/%Y %I:%M %p ET"
+                          ),
+        "diluted_shares": diluted_shares,
+        "btc_amount":     btc_amount,
+    }
+
 
 # ===========================================================================
 #  Public dispatcher
@@ -303,6 +353,7 @@ def fetch_strive() -> dict:
 _FETCHERS = {
     "MSTR": fetch_mstr,
     "ASST": fetch_strive,
+    "META": fetch_metaplanet,
 }
 
 SUPPORTED_COMPANIES = list(_FETCHERS.keys())
@@ -322,6 +373,13 @@ _COMPANY_META = [
         "color":        "#ffd740",
         "source_url":   "https://treasury.strive.com/",
         "logo_char":    "S",
+    },
+    {
+        "ticker":       "META",
+        "name":         "Metaplanet Inc.",
+        "color":        "#ff4e6a",
+        "source_url":   "https://metaplanet.jp/en",
+        "logo_char":    "M",
     },
 ]
 

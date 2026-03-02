@@ -1,11 +1,11 @@
 services:
   btc-treasury:
     build: .
-    image: btc-treasury:v2.5
+    image: btc-treasury:v3.0
     container_name: btc-treasury
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8020:8000"
     volumes:
       # Persist SQLite DB across container restarts
       - ./data:/app/data
