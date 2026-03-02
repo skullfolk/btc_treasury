@@ -51,7 +51,16 @@ def compare_prices(current_price: float, implied_price: float) -> dict:
             "classification": "unknown",
         }
 
-    diff_pct = ((implied_price - current_price) / implied_price) * 100
+    if current_price <= 0:
+        return {
+            "signal": "N/A",
+            "signal_emoji": "❓",
+            "discount_pct": 0.0,
+            "is_undervalued": False,
+            "classification": "unknown",
+        }
+
+    diff_pct = ((implied_price - current_price) / current_price) * 100
 
     if current_price <= implied_price:
         signal = "UNDERVALUED"
