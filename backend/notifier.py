@@ -12,8 +12,8 @@ logger = logging.getLogger(__name__)
 
 TELEGRAM_API = "https://api.telegram.org/bot{token}/sendMessage"
 
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-CHAT_ID   = os.environ.get("TELEGRAM_CHAT_ID", "")
+# Remove static global fetching of secrets to fix K3s APScheduler issues
+# They will be fetched dynamically inside the functions instead
 
 # Company display names for Telegram messages
 _COMPANY_LABELS = {
@@ -24,13 +24,16 @@ _COMPANY_LABELS = {
 
 def send_telegram(message: str) -> bool:
     """Send a plain-text / HTML message. Returns True on success."""
-    if not BOT_TOKEN or not CHAT_ID:
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+    if not bot_token or not chat_id:
         logger.warning("Telegram not configured — TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID missing.")
         return False
 
-    url = TELEGRAM_API.format(token=BOT_TOKEN)
+    url = TELEGRAM_API.format(token=bot_token)
     payload = {
-        "chat_id":  CHAT_ID,
+        "chat_id":  chat_id,
         "text":     message,
         "parse_mode": "HTML",
         "disable_web_page_preview": True,
@@ -89,7 +92,10 @@ def maybe_notify(data: dict, company: str = "MSTR") -> bool:
 
 def send_daily_report(results: dict[str, dict | None]) -> bool:
     """Send a daily summary report for all companies regardless of signal."""
-    if not BOT_TOKEN or not CHAT_ID:
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+    chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+    if not bot_token or not chat_id:
         return False
 
     lines = ["📊 <b>Daily BTC Treasury Report</b>\n"]
