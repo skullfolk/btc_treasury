@@ -92,10 +92,12 @@ def maybe_notify(data: dict, company: str = "MSTR") -> bool:
 
 def send_daily_report(results: dict[str, dict | None]) -> bool:
     """Send a daily summary report for all companies regardless of signal."""
+    logger.info("Starting send_daily_report with %d results", len(results) if results else 0)
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN", "")
     chat_id   = os.environ.get("TELEGRAM_CHAT_ID", "")
 
     if not bot_token or not chat_id:
+        logger.warning("Telegram not configured (in send_daily_report) — TOKEN or CHAT_ID missing.")
         return False
 
     lines = ["📊 <b>Daily BTC Treasury Report</b>\n"]
@@ -103,6 +105,7 @@ def send_daily_report(results: dict[str, dict | None]) -> bool:
 
     for company, data in results.items():
         if not data:
+            logger.debug("No data for company: %s", company)
             continue
             
         has_data = True
@@ -125,8 +128,9 @@ def send_daily_report(results: dict[str, dict | None]) -> bool:
         lines.append("")
         
     if not has_data:
+        logger.warning("send_daily_report: No company data found in results.")
         return False
         
     message = "\n".join(lines).strip()
-    logger.info("Sending daily Telegram report…")
+    logger.info("Sending daily Telegram report (message length: %d)...", len(message))
     return send_telegram(message)
