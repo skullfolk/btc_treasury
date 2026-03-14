@@ -35,6 +35,12 @@ jobs:
       with:
         sarif_file: semgrep.sarif
 
+    - name: Save SARIF file as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: my-semgrep-report
+        path: semgrep.sarif
+
   # 2. Build Image, Scan with Trivy, and Push to GHCR
   build-scan-push:
     name: Build, Run Trivy, and Push to Registry
@@ -95,6 +101,12 @@ jobs:
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: 'trivy-results.sarif'
+
+      - name: Save Trivy SARIF file as Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: my-trivy-report
+          path: trivy-results.sarif
 
       - name: Push Docker Image to GHCR
         uses: docker/build-push-action@v5
