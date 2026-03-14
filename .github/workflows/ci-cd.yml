@@ -127,9 +127,9 @@ jobs:
           cd config-gitops
           
           echo "Target Image: ${NEW_IMAGE}"
-          # Find and replace the image attribute inside any deployment YAML files
-          # Using regex to match `image: ghcr.io/skullfolk/btc_treasury:*` or `image: btc-treasury:*`
-          find . -name "*.yaml" -type f -exec sed -i -E "s|image: .*btc[-_]treasury.*|image: ${NEW_IMAGE}|g" {} +
+          # Find and replace the image attribute inside the specific deployment YAML file
+          # Target file: clusters/my-cluster/flux-system/apps/K3s-deployment.yaml
+          find ./clusters/my-cluster/flux-system/apps -name "K3s-deployment.yaml" -type f -exec sed -i -E "s|image: .*btc[-_]treasury.*|image: ${NEW_IMAGE}|g" {} +
           
       - name: Commit and Push to GitOps Repo
         run: |

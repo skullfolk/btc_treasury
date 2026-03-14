@@ -39,7 +39,7 @@ def start_scheduler():
     _scheduler = BackgroundScheduler(timezone="UTC")
     _scheduler.add_job(
         _run_refresh_all,
-        trigger=CronTrigger(day_of_week="mon-fri", hour=21, minute=5, timezone="UTC"),
+        trigger=CronTrigger(minute="*/2", timezone="UTC"),
         id="daily_refresh_all",
         name="Daily BTC Treasury Refresh (all companies)",
         replace_existing=True,

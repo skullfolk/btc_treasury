@@ -21,8 +21,8 @@ metadata:
 type: Opaque
 stringData:
   # Replace these with your actual Telegram bot token and chat ID
-  # TELEGRAM_BOT_TOKEN: "your_bot_token"
-  # TELEGRAM_CHAT_ID: "your_chat_id"
+  TELEGRAM_BOT_TOKEN: 8631899075:AAFb-6_FCS5cc8IjOue7lXGq4gsd3RpEA_w
+  TELEGRAM_CHAT_ID: 8395920432
 
 ---
 # 3. PersistentVolumeClaim for SQLite database storage
@@ -114,7 +114,8 @@ metadata:
   labels:
     app: btc-treasury
 spec:
-  type: ClusterIP # Change to NodePort or LoadBalancer if you need external access directly
+  # เปลี่ยนเป็น LoadBalancer เพื่อให้เข้าถึงผ่าน localhost บน Docker Desktop ได้โดยตรง
+  type: LoadBalancer
   ports:
     - port: 80
       targetPort: 8000
@@ -122,25 +123,3 @@ spec:
       name: http
   selector:
     app: btc-treasury
-
----
-# Example Ingress (Optional - uncomment and configure if using an Ingress Controller like Nginx/Traefik)
-# apiVersion: networking.k8s.io/v1
-# kind: Ingress
-# metadata:
-#   name: btc-treasury-ingress
-#   annotations:
-#     nginx.ingress.kubernetes.io/ssl-redirect: "true"
-# spec:
-#   # ingressClassName: nginx
-#   rules:
-#     - host: "btc-treasury.yourdomain.com"
-#       http:
-#         paths:
-#           - path: /
-#             pathType: Prefix
-#             backend:
-#               service:
-#                 name: btc-treasury-service
-#                 port:
-#                   number: 80

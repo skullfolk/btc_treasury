@@ -317,10 +317,13 @@ def fetch_metaplanet() -> dict:
     cash_usd = float(d.get("latestCashBalance", 0) or 0)
     market_cap_usd = float(d.get("marketCapBasic", 0) or 0)
 
-    # Derive USD stock price. Fallback to 0 if no shares or mcap is bad.
+    # Derive USD stock price.
     current_price_usd = 0.0
-    if diluted_shares > 0 and market_cap_usd > 0:
-        current_price_usd = market_cap_usd / diluted_shares
+    total_shares = float(d.get("latestTotalShares", 0) or 0)
+    
+    # marketCapBasic is calculated based on total outstanding shares, not diluted shares
+    if total_shares > 0 and market_cap_usd > 0:
+        current_price_usd = market_cap_usd / total_shares
 
     logger.info(
         "[META] price(usd)=$%.2f  BTC=%.1f  effShares=%.0f  debt=$%.0fM  "
