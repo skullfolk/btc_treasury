@@ -11,9 +11,9 @@ env:
   IMAGE_NAME: skullfolk/btc_treasury # Must be completely lowercase for Docker tags
 
 jobs:
-  # 1. CodeQL Scan
+  # 1. Semgrep Scan
   analyze:
-    name: CodeQL Analysis
+    name: Semgrep Analysis
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -24,18 +24,16 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v4
-      with:
-        languages: python, javascript # Python for backend, JS for frontend
+    - name: Run Semgrep
+      run: |
+        docker run --rm -v "${{ github.workspace }}:/src" returntocorp/semgrep \
+        semgrep scan --config auto --sarif --output semgrep.sarif /src
+      continue-on-error: true
 
-    - name: Autobuild
-      uses: github/codeql-action/autobuild@v4
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@v4
+    - name: Upload SARIF to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v3
       with:
-        category: "/language:python,javascript"
+        sarif_file: semgrep.sarif
 
   # 2. Build Image, Scan with Trivy, and Push to GHCR
   build-scan-push:
